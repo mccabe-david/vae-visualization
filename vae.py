@@ -5,11 +5,27 @@ The code is mainly developed using the PyTorch library
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import datasets, transforms
-from torchvision.utils import save_image
+# from torchvision import datasets, transforms
+# from torchvision.utils import save_image
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+from scipy.io import loadmat
+
+def pathname_helper(num):
+    return (4-len(num))*"0" + num
+
+recordings = []
+num_files = 10
+
+# Load Data
+for i in range(1, num_files+1):
+    x = loadmat(r"C:/Users/dmcca/OneDrive/Desktop/VAE Data/Training_WFDB/A" + pathname_helper(str(i)))
+    recording = np.asarray(x['val'], dtype=np.float64)
+    recordings.append(recording)
+
+print(recordings[2], len(recordings[2]))
+# type(recordings[i]) == numpy.ndarray
 
 """
 Determine if any GPUs are available

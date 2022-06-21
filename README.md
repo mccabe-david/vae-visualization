@@ -20,5 +20,5 @@ First thing you will need is the CPSC2018 Training dataset here https://storage.
 After this, the only thing left to do is running the project with
 
 ```sh
-python3 vae.py
+python vae.py
 ```
