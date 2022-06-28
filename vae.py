@@ -16,15 +16,15 @@ def pathname_helper(num):
     return (4-len(num))*"0" + num
 
 recordings = []
-num_files = 10
+num_files = 48
 
 # Load Data
 for i in range(1, num_files+1):
     x = loadmat(r"C:/Users/dmcca/OneDrive/Desktop/VAE Data/Training_WFDB/A" + pathname_helper(str(i)))
     recording = np.asarray(x['val'], dtype=np.float64)
-    recordings.append(recording)
+    recordings.append(recording[:,:3000])
 
-print(recordings[2], len(recordings[2]))
+# print(recordings[2], len(recordings[2]))
 # type(recordings[i]) == numpy.ndarray
 
 """
@@ -36,7 +36,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 """
 Initialize Hyperparameters
 """
-batch_size = 128
+batch_size = 12
 learning_rate = 1e-3
 num_epochs = 10
 
@@ -46,11 +46,10 @@ Create dataloaders to feed data into the neural network
 Default MNIST dataset is used and standard train/test split is performed
 """
 train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('data', train=True, download=True,
-                    transform=transforms.ToTensor()),
+    recordings,
     batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('data', train=False, transform=transforms.ToTensor()),
+    recordings,
     batch_size=1)
 
 
@@ -58,19 +57,19 @@ test_loader = torch.utils.data.DataLoader(
 A Convolutional Variational Autoencoder
 """
 class VAE(nn.Module):
-    def __init__(self, imgChannels=1, featureDim=32*20*20, zDim=256):
+    def __init__(self, imgChannels=12, featureDim=32*20*20, zDim=256):
         super(VAE, self).__init__()
 
         # Initializing the 2 convolutional layers and 2 full-connected layers for the encoder
-        self.encConv1 = nn.Conv2d(imgChannels, 16, 5)
-        self.encConv2 = nn.Conv2d(16, 32, 5)
+        self.encConv1 = nn.Conv1d(imgChannels, 16, 5)
+        self.encConv2 = nn.Conv1d(16, 32, 5)
         self.encFC1 = nn.Linear(featureDim, zDim)
         self.encFC2 = nn.Linear(featureDim, zDim)
 
         # Initializing the fully-connected layer and 2 convolutional layers for decoder
         self.decFC1 = nn.Linear(zDim, featureDim)
-        self.decConv1 = nn.ConvTranspose2d(32, 16, 5)
-        self.decConv2 = nn.ConvTranspose2d(16, imgChannels, 5)
+        self.decConv1 = nn.ConvTranspose1d(32, 16, 5)
+        self.decConv2 = nn.ConvTranspose1d(16, imgChannels, 5)
 
     def encoder(self, x):
 
@@ -116,15 +115,14 @@ Initialize the network and the Adam optimizer
 net = VAE().to(device)
 optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
 
-
-
 """
 Training the network for a given number of epochs
 The loss after every epoch is printed
 """
 for epoch in range(num_epochs):
     for idx, data in enumerate(train_loader, 0):
-        imgs, _ = data
+
+        imgs = data
         imgs = imgs.to(device)
 
         # Feeding a batch of images into the network to obtain the output image, mu, and logVar
