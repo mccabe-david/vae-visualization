@@ -16,13 +16,14 @@ def pathname_helper(num):
     return (4-len(num))*"0" + num
 
 recordings = []
-num_files = 48
+num_files = 24
 
 # Load Data
 for i in range(1, num_files+1):
     x = loadmat(r"C:/Users/dmcca/OneDrive/Desktop/VAE Data/Training_WFDB/A" + pathname_helper(str(i)))
     recording = np.asarray(x['val'], dtype=np.float64)
-    recordings.append(recording[:,:3000])
+    recording = recording[:, ~np.isnan(recording).any(axis=0)]
+    recordings.append(recording[:,:2000])
 
 # print(recordings[2], len(recordings[2]))
 # type(recordings[i]) == numpy.ndarray
@@ -57,7 +58,7 @@ test_loader = torch.utils.data.DataLoader(
 A Convolutional Variational Autoencoder
 """
 class VAE(nn.Module):
-    def __init__(self, imgChannels=12, featureDim=32*20*20, zDim=256):
+    def __init__(self, imgChannels=12, featureDim=12*32*1992, zDim=256):
         super(VAE, self).__init__()
 
         # Initializing the 2 convolutional layers and 2 full-connected layers for the encoder
@@ -76,9 +77,10 @@ class VAE(nn.Module):
         # Input is fed into 2 convolutional layers sequentially
         # The output feature map are fed into 2 fully-connected layers to predict mean (mu) and variance (logVar)
         # Mu and logVar are used for generating middle representation z and KL divergence loss
+        
         x = F.relu(self.encConv1(x))
         x = F.relu(self.encConv2(x))
-        x = x.view(-1, 32*20*20)
+        x = x.view(-1, 12*32*1992)
         mu = self.encFC1(x)
         logVar = self.encFC2(x)
         return mu, logVar
@@ -95,7 +97,8 @@ class VAE(nn.Module):
         # z is fed back into a fully-connected layers and then into two transpose convolutional layers
         # The generated output is the same size of the original input
         x = F.relu(self.decFC1(z))
-        x = x.view(-1, 32, 20, 20)
+        x = x.view(-1, 12, 32, 1992)
+        x = x.squeeze()
         x = F.relu(self.decConv1(x))
         x = torch.sigmoid(self.decConv2(x))
         return x
@@ -122,15 +125,15 @@ The loss after every epoch is printed
 for epoch in range(num_epochs):
     for idx, data in enumerate(train_loader, 0):
 
-        imgs = data
+        imgs = data.float()
         imgs = imgs.to(device)
-
+        
         # Feeding a batch of images into the network to obtain the output image, mu, and logVar
         out, mu, logVar = net(imgs)
 
         # The loss is the BCE loss combined with the KL divergence to ensure the distribution is learnt
         kl_divergence = -0.5 * torch.sum(1 + logVar - mu.pow(2) - logVar.exp())
-        loss = F.binary_cross_entropy(out, imgs, size_average=False) + kl_divergence
+        loss = F.binary_cross_entropy(out, imgs, reduction='sum') + kl_divergence
 
         # Backpropagation based on the loss
         optimizer.zero_grad()
