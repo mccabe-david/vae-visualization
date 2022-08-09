@@ -4,35 +4,71 @@ The code is mainly developed using the PyTorch library
 """
 import wfdb
 import os
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-# from torchvision import datasets, transforms
-# from torchvision.utils import save_image
 import matplotlib.pyplot as plt
 import numpy as np
 import random
-# from scipy.io import loadmat
+from bs4 import BeautifulSoup
+import requests
+
+def get_url_paths(url, folder = 'p05/'):
+    response = requests.get(url + folder)
+    if response.ok:
+        response_text = response.text
+    else:
+        return response.raise_for_status()
+    soup = BeautifulSoup(response_text, 'html.parser')
+    temp = 'mimic3wdb-matched/' + folder
+    parent = [temp + node.get('href')[:-1] for node in soup.find_all('a')]
+    return parent
+
+url = 'https://physionet.org/static/published-projects/mimic3wdb-matched/1.0/'
+patients = get_url_paths(url) # optionally specify folder here as an arg (e.g. folder = 'p07/')
 
 cwd = os.getcwd()
-# wfdb.io.dl_database('mimic3wdb-matched/p04/p040239', os.getcwd())
-record = wfdb.rdrecord('3458887_0008')
-
+patients_to_use = 3
 PPG_Data = []
-# Load Data
-for filename in os.listdir(cwd):
-    if filename.endswith('.hea'):
-        with open(cwd+'\\'+filename, "r") as f:
-            if 'layout' in filename: continue
-            for idx, line in enumerate(f.readlines()):
-                if "PLETH" in line:
-                    record = wfdb.rdrecord(filename[:-4])
-                    if type(record.p_signal) == None:
-                        PPG_Data.append(record.d_signal[:, idx - 1])
-                    else:
-                        PPG_Data.append(record.p_signal[:, idx - 1])
-print(len(PPG_Data))
+for m, patient in enumerate(random.sample(patients, patients_to_use)):
+    print("Loading Patient " + str(m) + "'s data")
+    # Turn off print statements
+    sys.stdout = open(os.devnull, 'w')
+
+    wfdb.io.dl_database(patient, cwd)
+    
+    # Turn print statements back on
+    sys.stdout = sys.__stdout__
+
+    # Load Patient PLETH Data
+    for filename in os.listdir(cwd):
+        if filename.endswith('.hea'):
+            with open(cwd+'\\'+filename, "r") as f:
+                if 'layout' not in filename: 
+                    try: 
+                        for idx, line in enumerate(f.readlines()):
+                            if "PLETH" in line:
+                                record = wfdb.rdrecord(filename[:-4])
+                                if type(record.p_signal) != None and record.fs == 125:
+                                    PPG_Data.append(record.p_signal[:, idx - 1])
+                                break 
+                        os.remove(filename[:-4]+ '.dat')
+                    except:
+                        pass
+            os.remove(filename)
+        if filename.endswith('n.dat'):
+            os.remove(filename)
+
+print('Total number of records (different lengths): ' + str(len(PPG_Data)))
+# TODO
+# Split data into 10-12 second intervals from each array
+# (sampling rate is 125x per second)
+raise
 for sample in PPG_Data:
+    samp = sample[372522: (125*10)+372522] - np.mean(sample[372522: (125*10)+372522])
+    plt.plot((np.abs(np.fft.fft(samp))**2)[:125])
+    plt.show()
     print(len(sample))
 raise
 
