@@ -2,6 +2,8 @@
 Import necessary libraries to create a variational autoencoder
 The code is mainly developed using the PyTorch library
 """
+import wfdb
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,23 +12,30 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 import random
-from scipy.io import loadmat
+# from scipy.io import loadmat
 
-def pathname_helper(num):
-    return (4-len(num))*"0" + num
+cwd = os.getcwd()
+# wfdb.io.dl_database('mimic3wdb-matched/p04/p040239', os.getcwd())
+record = wfdb.rdrecord('3458887_0008')
 
-recordings = []
-num_files = 24
-
+PPG_Data = []
 # Load Data
-for i in range(1, num_files+1):
-    x = loadmat(r"C:/Users/dmcca/OneDrive/Desktop/VAE Data/Training_WFDB/A" + pathname_helper(str(i)))
-    recording = np.asarray(x['val'], dtype=np.float64)
-    recording = recording[:, ~np.isnan(recording).any(axis=0)]
-    recordings.append(recording[:,:2000])
+for filename in os.listdir(cwd):
+    if filename.endswith('.hea'):
+        with open(cwd+'\\'+filename, "r") as f:
+            if 'layout' in filename: continue
+            for idx, line in enumerate(f.readlines()):
+                if "PLETH" in line:
+                    record = wfdb.rdrecord(filename[:-4])
+                    if type(record.p_signal) == None:
+                        PPG_Data.append(record.d_signal[:, idx - 1])
+                    else:
+                        PPG_Data.append(record.p_signal[:, idx - 1])
+print(len(PPG_Data))
+for sample in PPG_Data:
+    print(len(sample))
+raise
 
-# print(recordings[2], len(recordings[2]))
-# type(recordings[i]) == numpy.ndarray
 
 """
 Determine if any GPUs are available
@@ -127,6 +136,8 @@ for epoch in range(num_epochs):
 
         imgs = data.float()
         imgs = imgs.to(device)
+        
+        print(idx, imgs.shape, max(np.asarray(imgs).flatten()))
         
         # Feeding a batch of images into the network to obtain the output image, mu, and logVar
         out, mu, logVar = net(imgs)
