@@ -29,7 +29,7 @@ url = 'https://physionet.org/static/published-projects/mimic3wdb-matched/1.0/'
 patients = get_url_paths(url) # optionally specify folder here as an arg (e.g. folder = 'p07/')
 
 cwd = os.getcwd()
-patients_to_use = 3
+patients_to_use = 2
 PPG_Data = []
 for m, patient in enumerate(random.sample(patients, patients_to_use)):
     print("Loading Patient " + str(m) + "'s data")
@@ -60,17 +60,18 @@ for m, patient in enumerate(random.sample(patients, patients_to_use)):
         if filename.endswith('n.dat'):
             os.remove(filename)
 
-print('Total number of records (different lengths): ' + str(len(PPG_Data)))
-# TODO
 # Split data into 10-12 second intervals from each array
 # (sampling rate is 125x per second)
-raise
-for sample in PPG_Data:
-    samp = sample[372522: (125*10)+372522] - np.mean(sample[372522: (125*10)+372522])
-    plt.plot((np.abs(np.fft.fft(samp))**2)[:125])
-    plt.show()
-    print(len(sample))
-raise
+recordings = []
+sample_length = 1250
+for patient in PPG_Data:
+    temp = 0
+    length = len(patient) - sample_length
+    while(length > temp):
+        temp2 = patient[temp:temp+sample_length]
+        if not np.isnan(temp2).any(): recordings.append(temp2)
+        temp += sample_length
+del PPG_Data
 
 
 """
@@ -82,40 +83,48 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 """
 Initialize Hyperparameters
 """
-batch_size = 12
-learning_rate = 1e-3
+batch_size = 60
+learning_rate = 1e-4
 num_epochs = 10
 
+"""
+Final Input Processing
+"""
+random.shuffle(recordings)
+recordings = recordings[:len(recordings)-(len(recordings)%batch_size)]
+print("Total Samples: " + str(len(recordings)))
+cutoff = int(0.9*(len(recordings)//batch_size))*batch_size
 
 """
 Create dataloaders to feed data into the neural network
-Default MNIST dataset is used and standard train/test split is performed
 """
 train_loader = torch.utils.data.DataLoader(
-    recordings,
+    recordings[:cutoff],
     batch_size=batch_size, shuffle=True)
 test_loader = torch.utils.data.DataLoader(
-    recordings,
-    batch_size=1)
+    recordings[cutoff:],
+    batch_size=batch_size)
 
 
 """
 A Convolutional Variational Autoencoder
 """
 class VAE(nn.Module):
-    def __init__(self, imgChannels=12, featureDim=12*32*1992, zDim=256):
+    def __init__(self, imgChannels=batch_size, featureDim=20*1223, zDim=256):
         super(VAE, self).__init__()
 
         # Initializing the 2 convolutional layers and 2 full-connected layers for the encoder
-        self.encConv1 = nn.Conv1d(imgChannels, 16, 5)
-        self.encConv2 = nn.Conv1d(16, 32, 5)
+        self.encConv1 = nn.Conv1d(imgChannels, 40, 10)
+        self.encConv2 = nn.Conv1d(40, 20, 10)
+        self.encConv3 = nn.Conv1d(20, 20, 10)
         self.encFC1 = nn.Linear(featureDim, zDim)
         self.encFC2 = nn.Linear(featureDim, zDim)
 
         # Initializing the fully-connected layer and 2 convolutional layers for decoder
         self.decFC1 = nn.Linear(zDim, featureDim)
-        self.decConv1 = nn.ConvTranspose1d(32, 16, 5)
-        self.decConv2 = nn.ConvTranspose1d(16, imgChannels, 5)
+        self.decConv1 = nn.ConvTranspose1d(20, 30, 10)
+        self.decConv2 = nn.ConvTranspose1d(30, 20, 10)
+        self.decConv3 = nn.ConvTranspose1d(20, imgChannels, 10)
 
     def encoder(self, x):
 
@@ -125,7 +134,8 @@ class VAE(nn.Module):
         
         x = F.relu(self.encConv1(x))
         x = F.relu(self.encConv2(x))
-        x = x.view(-1, 12*32*1992)
+        x = F.relu(self.encConv3(x))
+        x = x.view(-1, 24460)
         mu = self.encFC1(x)
         logVar = self.encFC2(x)
         return mu, logVar
@@ -142,10 +152,11 @@ class VAE(nn.Module):
         # z is fed back into a fully-connected layers and then into two transpose convolutional layers
         # The generated output is the same size of the original input
         x = F.relu(self.decFC1(z))
-        x = x.view(-1, 12, 32, 1992)
+        x = x.view(-1, 20, 1, 1223)
         x = x.squeeze()
         x = F.relu(self.decConv1(x))
-        x = torch.sigmoid(self.decConv2(x))
+        x = F.relu(self.decConv2(x))
+        x = torch.sigmoid(self.decConv3(x))
         return x
 
     def forward(self, x):
@@ -172,9 +183,6 @@ for epoch in range(num_epochs):
 
         imgs = data.float()
         imgs = imgs.to(device)
-        
-        print(idx, imgs.shape, max(np.asarray(imgs).flatten()))
-        
         # Feeding a batch of images into the network to obtain the output image, mu, and logVar
         out, mu, logVar = net(imgs)
 
