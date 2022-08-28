@@ -29,7 +29,7 @@ url = 'https://physionet.org/static/published-projects/mimic3wdb-matched/1.0/'
 patients = get_url_paths(url) # optionally specify folder here as an arg (e.g. folder = 'p07/')
 
 cwd = os.getcwd()
-patients_to_use = 2
+patients_to_use = 1
 PPG_Data = []
 for m, patient in enumerate(random.sample(patients, patients_to_use)):
     print("Loading Patient " + str(m) + "'s data")
@@ -110,32 +110,36 @@ test_loader = torch.utils.data.DataLoader(
 A Convolutional Variational Autoencoder
 """
 class VAE(nn.Module):
-    def __init__(self, imgChannels=batch_size, featureDim=20*1223, zDim=256):
+    def __init__(self, imgChannels=1, featureDim=batch_size*(sample_length-57), zDim=256):
         super(VAE, self).__init__()
 
         # Initializing the 2 convolutional layers and 2 full-connected layers for the encoder
-        self.encConv1 = nn.Conv1d(imgChannels, 40, 10)
-        self.encConv2 = nn.Conv1d(40, 20, 10)
-        self.encConv3 = nn.Conv1d(20, 20, 10)
+        self.encConv1 = nn.Conv1d(imgChannels, 10, 40)
+        self.encConv2 = nn.Conv1d(10, 5, 10)
+        self.encConv3 = nn.Conv1d(5, 1, 10)
         self.encFC1 = nn.Linear(featureDim, zDim)
         self.encFC2 = nn.Linear(featureDim, zDim)
 
         # Initializing the fully-connected layer and 2 convolutional layers for decoder
         self.decFC1 = nn.Linear(zDim, featureDim)
-        self.decConv1 = nn.ConvTranspose1d(20, 30, 10)
-        self.decConv2 = nn.ConvTranspose1d(30, 20, 10)
-        self.decConv3 = nn.ConvTranspose1d(20, imgChannels, 10)
+        self.decConv1 = nn.ConvTranspose1d(1, 5, 10)
+        self.decConv2 = nn.ConvTranspose1d(5, 10, 10)
+        self.decConv3 = nn.ConvTranspose1d(10, 1, 40)
 
     def encoder(self, x):
 
         # Input is fed into 2 convolutional layers sequentially
         # The output feature map are fed into 2 fully-connected layers to predict mean (mu) and variance (logVar)
         # Mu and logVar are used for generating middle representation z and KL divergence loss
-        
+        x = torch.unsqueeze(x, 1)
+        # print(x.shape)
         x = F.relu(self.encConv1(x))
+        # print(x.shape)
         x = F.relu(self.encConv2(x))
+        # print(x.shape)
         x = F.relu(self.encConv3(x))
-        x = x.view(-1, 24460)
+        # print(x.shape)
+        x = x.view(-1, batch_size*(sample_length-57))
         mu = self.encFC1(x)
         logVar = self.encFC2(x)
         return mu, logVar
@@ -152,8 +156,10 @@ class VAE(nn.Module):
         # z is fed back into a fully-connected layers and then into two transpose convolutional layers
         # The generated output is the same size of the original input
         x = F.relu(self.decFC1(z))
-        x = x.view(-1, 20, 1, 1223)
-        x = x.squeeze()
+        x = x.view(-1, 60, sample_length-57)
+        x = torch.squeeze(x)
+        x = torch.unsqueeze(x, 1)
+        # print(x.shape)
         x = F.relu(self.decConv1(x))
         x = F.relu(self.decConv2(x))
         x = torch.sigmoid(self.decConv3(x))
@@ -166,6 +172,7 @@ class VAE(nn.Module):
         mu, logVar = self.encoder(x)
         z = self.reparameterize(mu, logVar)
         out = self.decoder(z)
+        out = torch.squeeze(out)
         return out, mu, logVar
 
 """
@@ -182,7 +189,6 @@ for epoch in range(num_epochs):
     for idx, data in enumerate(train_loader, 0):
 
         imgs = data.float()
-        imgs = imgs.to(device)
         # Feeding a batch of images into the network to obtain the output image, mu, and logVar
         out, mu, logVar = net(imgs)
 
