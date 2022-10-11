@@ -27,7 +27,7 @@ ssh.connect(
 
 # for package installation
 command2 = "pip uninstall -r requirements.txt"
-raise
+
 stdin, stdout, sterr = ssh.exec_command(command2)
 
 print(stdout.read().decode())
