@@ -7,30 +7,44 @@ router_ip = "cscigpu06.bc.edu"
 router_uname = uname
 router_pword = password
 
-ssh = paramiko.SSHClient()
+with paramiko.SSHClient() as ssh:
 
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-ssh.connect(
-    router_ip,
-    username=router_uname,
-    password=router_pword,
-    look_for_keys=False
-)
+    ssh.connect(
+        router_ip,
+        username=router_uname,
+        password=router_pword,
+        look_for_keys=False
+    )
 
-# for copying files to gpu
-# (You'll need to enter password)
-os.system("scp vae.py " + uname + "@" + router_ip + ":")
+    # for copying files to gpu
+    # (You'll need to enter password)
+    os.system("scp vae.py " + uname + "@" + router_ip + ":")
 
-# for running python files
-# command = "python3 vae.py"
+    # for running python files
+    # cleanup0 = "ls"
+    # cleanup1 = "rm *"
+    command = "python3 vae.py"
+    command2 = "curl --upload-file ./output.png https://big_bucket.keep.sh"
 
-# for package installation
-command2 = "pip3 install -r requirements.txt"
+    # for package installation
+    # command2 = "pip3 install -r requirements.txt"
+    stdin, stdout, sterr = ssh.exec_command(command)
 
-stdin, stdout, sterr = ssh.exec_command(command2)
+    print(stdout.read().decode())
+    print(sterr.read().decode())
 
-print(stdout.read().decode())
-print(sterr.read().decode())
+    stdin, stdout, sterr = ssh.exec_command(command2)
 
-ssh.close()
+    print(stdout.read().decode())
+    print(sterr.read().decode())
+
+    '''
+    stdin, stdout, sterr = ssh.exec_command(command)
+
+    print(stdout.read().decode())
+    print(sterr.read().decode())
+    '''
+    # os.system("scp mccabedi@cscigpu06:/home/mccabedi/output.png C:\\Users\\dmcca\\OneDrive\\Desktop\\gpu")
+    ssh.close()

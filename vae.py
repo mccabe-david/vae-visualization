@@ -29,7 +29,7 @@ url = 'https://physionet.org/static/published-projects/mimic3wdb-matched/1.0/'
 patients = get_url_paths(url, folder = 'p04/') # optionally specify folder here as an arg (e.g. folder = 'p07/')
 
 cwd = os.getcwd()
-patients_to_use = 1
+patients_to_use = 5
 PPG_Data = []
 for m, patient in enumerate(random.sample(patients, patients_to_use)):
     
@@ -41,11 +41,11 @@ for m, patient in enumerate(random.sample(patients, patients_to_use)):
     
     # Turn print statements back on
     sys.stdout = sys.__stdout__
-
+ 
     # Load Patient PLETH Data
     for filename in os.listdir(cwd):
         if filename.endswith('.hea'):
-            with open(cwd+'\\'+filename, "r") as f:
+            with open(cwd+'/'+filename, "r") as f:
                 if 'layout' not in filename: 
                     try: 
                         for idx, line in enumerate(f.readlines()):
@@ -78,9 +78,8 @@ del PPG_Data
 """
 Determine if any GPUs are available
 """
-raise
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+cpu = torch.device("cpu")
 
 """
 Initialize Hyperparameters
@@ -191,36 +190,40 @@ for epoch in range(num_epochs):
     for idx, data in enumerate(train_loader, 0):
 
         imgs = data.float()
+        imgs = imgs.to(device)
+
         # Feeding a batch of images into the network to obtain the output image, mu, and logVar
         out, mu, logVar = net(imgs)
+        out = out.to(device)
         # The loss is the BCE loss combined with the KL divergence to ensure the distribution is learnt
-        kl_divergence = -0.5 * torch.sum(1 + logVar - mu.pow(2) - logVar.exp())
+        # kl_divergence = -0.5 * torch.sum(1 + logVar - mu.pow(2) - logVar.exp())
         # if idx % 1000: print(kl_divergence)
-        loss = F.mse_loss(out, imgs) # + kl_divergence
+        loss = F.mse_loss(out, imgs).to(device) # + kl_divergence
+        '''
         if loss < 0:
             if kl_divergence < 0: 
                 print("KL")
             else:
                 print("MSE")
             raise
-        
+        '''
         # Backpropagation based on the loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-print('Epoch {}: Loss {}'.format(epoch, loss))
+print('Epoch {}: Loss {}'.format(epoch, loss.to(cpu)))
 with torch.no_grad():
     for data in random.sample(list(test_loader), 1):
         plt.gca().set_prop_cycle(color=['red', 'green'])
         imgs = data.float()
-        imgs = imgs.to(device)
         img = imgs[0]
         plt.plot(img)
+        imgs = imgs.to(device)
         out, mu, logVAR = net(imgs)
         outimg = out[0]
-        plt.plot(outimg)
-        plt.show()
+        plt.plot(outimg.to(cpu))
+        plt.savefig("output.png")
 
 """
 The following part takes a random image from test loader to feed into the VAE.
