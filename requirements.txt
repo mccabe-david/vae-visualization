@@ -1,3 +1,5 @@
 torch
 matplotlib
 numpy
+beautifulsoup4
+wfdb
