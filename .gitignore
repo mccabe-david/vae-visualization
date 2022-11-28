@@ -1,4 +1,4 @@
 *.dat
 *.hea
-secrets.py
+gpu_secrets.py
 *.pyc

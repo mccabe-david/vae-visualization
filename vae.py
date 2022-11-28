@@ -26,10 +26,19 @@ def get_url_paths(url, folder = 'p05/'):
     return parent
 
 url = 'https://physionet.org/static/published-projects/mimic3wdb-matched/1.0/'
-patients = get_url_paths(url, folder = 'p04/') # optionally specify folder here as an arg (e.g. folder = 'p07/')
-
+patients = get_url_paths(url) # optionally specify folder here as an arg (e.g. folder = 'p07/')
 cwd = os.getcwd()
-patients_to_use = 5
+
+"""
+Initialize Hyperparameters
+"""
+batch_size = 100
+learning_rate = 1e-3
+learning_rate *= 10
+num_epochs = 300
+patients_to_use = 15
+
+
 PPG_Data = []
 for m, patient in enumerate(random.sample(patients, patients_to_use)):
     
@@ -70,7 +79,17 @@ for patient in PPG_Data:
     length = len(patient) - sample_length
     while(length > temp):
         temp2 = patient[temp:temp+sample_length]
-        if not np.isnan(temp2).any(): recordings.append(temp2)
+        max_ = -9999
+        min_ = 9999
+        nanflag = True
+        for each in temp2:
+            if np.isnan(each):
+                nanflag = False
+            if each > max_:
+                max_ = each
+            if each < min_:
+                min_ = each
+        if nanflag and max_ <= 1.5 and min_ >= 0.001 and max_-min_ > 0.05: recordings.append(temp2)
         temp += sample_length
 del PPG_Data
 
@@ -80,13 +99,6 @@ Determine if any GPUs are available
 """
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 cpu = torch.device("cpu")
-
-"""
-Initialize Hyperparameters
-"""
-batch_size = 100
-learning_rate = 1e-3
-num_epochs = 10
 
 """
 Final Input Processing
@@ -111,7 +123,7 @@ test_loader = torch.utils.data.DataLoader(
 A Convolutional Variational Autoencoder
 """
 class VAE(nn.Module):
-    def __init__(self, imgChannels=1, featureDim=batch_size*(sample_length-57), zDim=256):
+    def __init__(self, imgChannels=1, featureDim=batch_size*(sample_length-57), zDim=128):
         super(VAE, self).__init__()
 
         # Initializing the 2 convolutional layers and 2 full-connected layers for the encoder
@@ -159,11 +171,19 @@ class VAE(nn.Module):
         x = F.relu(self.decFC1(z))
         x = x.view(-1, batch_size, sample_length-57)
         x = torch.squeeze(x)
-        x = torch.unsqueeze(x, 1)
+        x_in = torch.unsqueeze(x, 1)
         # print(x.shape)
-        x = F.relu(self.decConv1(x))
-        x = F.relu(self.decConv2(x))
-        x = torch.sigmoid(self.decConv3(x))
+        x1 = F.relu(self.decConv1(x_in))
+        x2 = F.relu(self.decConv2(x1))
+        x = torch.sigmoid(self.decConv3(x2))
+        if(np.isnan(x.detach().to(cpu)).any() == 1):
+            print(np.isnan(F.relu(self.decFC1(z)).detach().to(cpu)).any() == 1)
+            print(np.isnan(x_in.detach().to(cpu)).any() == 1)
+            print(np.isnan(self.decConv1(x_in).detach().to(cpu)).any() == 1)
+            print(np.isnan(F.relu(self.decConv1(x_in)).detach().to(cpu)).any() == 1)
+            print(np.isnan(x1.detach().to(cpu)).any() == 1)
+            print(np.isnan(x2.detach().to(cpu)).any() == 1)
+            print("decoded")
         return x
 
     def forward(self, x):
@@ -180,13 +200,16 @@ class VAE(nn.Module):
 Initialize the network and the Adam optimizer
 """
 net = VAE().to(device)
-optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate/10, momentum=0.001, weight_decay=0.001)
 
 """
 Training the network for a given number of epochs
 The loss after every epoch is printed
 """
 for epoch in range(num_epochs):
+    if epoch == 40 or epoch == 120: 
+        learning_rate /= 10
+        optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate/10, momentum=learning_rate/100, weight_decay=learning_rate/100)
     for idx, data in enumerate(train_loader, 0):
 
         imgs = data.float()
@@ -199,6 +222,13 @@ for epoch in range(num_epochs):
         # kl_divergence = -0.5 * torch.sum(1 + logVar - mu.pow(2) - logVar.exp())
         # if idx % 1000: print(kl_divergence)
         loss = F.mse_loss(out, imgs).to(device) # + kl_divergence
+        if (np.isnan(loss.detach().to(cpu)).any()):
+            print(np.isnan(out.detach().to(cpu)).any() == 1)
+            temp = net.forward(imgs)[0]
+            print(np.isnan(temp[0].detach().to(cpu)).any() == 1)
+            print(np.isnan(temp[1].detach().to(cpu)).any() == 1)
+            print(np.isnan(net.reparameterize(temp[0], temp[1]).detach().to(cpu)).any() == 1)
+            raise
         '''
         if loss < 0:
             if kl_divergence < 0: 
@@ -223,7 +253,7 @@ with torch.no_grad():
         out, mu, logVAR = net(imgs)
         outimg = out[0]
         plt.plot(outimg.to(cpu))
-        plt.savefig("output.png")
+        plt.savefig("output11.png")
 
 """
 The following part takes a random image from test loader to feed into the VAE.
